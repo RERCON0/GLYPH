@@ -12,7 +12,7 @@ try {
     New-Item -ItemType Directory -Force dist | Out-Null
     Copy-Item target/release/glyph.exe GLYPH.exe -Force
     Copy-Item target/release/glyph.exe dist/GLYPH.exe -Force
-    Copy-Item README.md, README.ru.md, SECURITY.md, LICENSE dist/ -Force
+    Copy-Item README.md, README.ru.md, SECURITY.md, SECURITY.ru.md, LICENSE dist/ -Force
     Copy-Item fonts/OFL-notice.txt dist/FONT-LICENSE.txt -Force
     Copy-Item fonts/OFL.txt dist/OFL.txt -Force
     python scripts/check_artifact.py GLYPH.exe

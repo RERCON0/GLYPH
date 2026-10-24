@@ -1,87 +1,86 @@
-# Безопасность GLYPH
+# GLYPH security
 
-GLYPH — локальный генератор секретов, а не менеджер паролей. Он не хранит
-значения на диске, не синхронизируется и не принимает секреты извне. Модель
-угрозы — локальная машина: другой пользователь, менеджер буфера обмена,
-случайный взгляд на экран, дамп памяти, вредоносное ПО.
+**English** · [Russian](SECURITY.ru.md)
 
-## Что гарантируется
+GLYPH is a local secret generator, not a password manager. It does not store
+values on disk, does not sync and does not accept secrets from outside. The
+threat model is the local machine: another user, a clipboard manager, someone
+looking at the screen, a memory dump or malware.
 
-- Случайность берётся только у ОС через `getrandom` (Windows CSPRNG). Индексы
-  выбираются rejection sampling без смещения, перемешивание — Fisher–Yates.
-  Отказ источника случайности на любом шаге прекращает генерацию; слабого
-  запасного PRNG нет.
-- Секреты не реализуют `Debug` и `Serialize`, не попадают в имена виджетов,
-  статусы, подсказки или URL. Метаданные (режим, длина, энтропия, число скрытых
-  символов) секретом не являются.
-- Основные буферы секретов очищаются `zeroize` при вытеснении из истории, при
-  очистке сеанса и при штатном завершении процесса.
-- GLYPH не делает сетевых запросов, не создаёт файлов с секретами, истории или
-  логов и не содержит телеметрии или проверки обновлений. Единственная
-  сохраняемая настройка — язык интерфейса в `HKCU\Software\GLYPH` (значение
-  `en`/`ru`); секретов, истории и параметров генерации там нет. Единственное
-  внешнее действие — открытие фиксированного `https://t.me/rercon` в браузере по
-  явному клику. Адрес — константа; ни секрет, ни его длина, ни энтропия в ссылку
-  не попадают.
-- При копировании выставляются маркеры Windows
-  `CanIncludeInClipboardHistory` и `CanUploadToCloudClipboard`, а очистка
-  выполняется только если sequence number буфера всё ещё принадлежит GLYPH.
-  Более поздняя копия из другого приложения не стирается.
-- Для пароля показывается консервативная нижняя оценка энтропии. Скрытые
-  символы нулевой ширины в неё не входят. Для токенов — 8 бит на байт.
-- `Cargo.lock` фиксирует зависимости; CI проверяет известные уязвимости через
-  `cargo audit`, форматирование, Clippy, тесты и PE-артефакт. Версия в
-  `Cargo.toml`, `icons/icon.rc` и манифесте не может разойтись незаметно.
+## Guarantees
 
-## Ограничения и остаточные риски
+- Randomness comes only from the OS through `getrandom` (Windows CSPRNG).
+  Indexes use rejection sampling without bias; shuffling is Fisher–Yates. A
+  failure of the random source at any stage aborts generation; there is no weak
+  fallback PRNG.
+- Secrets do not implement `Debug` or `Serialize` and never reach widget names,
+  status lines, tooltips or URLs. Metadata (mode, length, entropy, hidden count)
+  is not a secret.
+- Primary secret buffers are zeroized on history eviction, on session clearing
+  and on a normal process exit.
+- GLYPH makes no network requests and creates no files with secrets, history or
+  logs; it has no telemetry and no update check. The only saved setting is the
+  interface language in `HKCU\Software\GLYPH` (`en`/`ru`); it contains no
+  secrets, history or generation parameters. The only external action is
+  opening the fixed `https://t.me/rercon` in the browser on an explicit click.
+  The address is a constant: no secret, length or entropy figure reaches it.
+- Clipboard writes set the Windows `CanIncludeInClipboardHistory` and
+  `CanUploadToCloudClipboard` markers, and clearing happens only while the
+  clipboard sequence number still belongs to GLYPH. A later copy from another
+  application is never erased.
+- Passwords show a conservative lower-bound entropy estimate. Hidden zero-width
+  characters are not included. Tokens use 8 bits per byte.
+- `Cargo.lock` pins dependencies; CI checks known vulnerabilities with
+  `cargo audit`, formatting, Clippy, tests and the PE artifact. The version in
+  `Cargo.toml`, `icons/icon.rc` and the manifest cannot drift unnoticed.
 
-- **Копии в памяти.** `zeroize` покрывает основные буферы GLYPH. Текст также
-  существует в кэше раскладки egui, в графическом стеке, в куче буфера обмена и
-  может остаться в подкачке. Это не защита от дампа памяти, спящего режима или
-  привилегированного вредоносного ПО.
-- **Таймер буфера — best effort.** Через 30 секунд GLYPH пытается очистить
-  буфер, повторяя попытки до 3 секунд. Если буфер всё это время занят,
-  приложение перестаёт за ним следить и показывает предупреждение: секрет может
-  остаться в буфере до следующей чужой копии. Убийство процесса, `panic` и
-  выключение питания очистку не выполняют (`panic = "abort"` пропускает `Drop`).
-- **Чужие менеджеры буфера.** Маркеры запрета истории и облака являются
-  рекомендацией Windows; сторонние программы могут их игнорировать и сохранить
-  свою копию. GLYPH не может удалить чужие копии.
-- **Эвристика владения.** Если менеджер буфера меняет sequence number, не
-  заменяя текст, GLYPH решит, что буфер уже чужой, и оставит секрет. Это
-  сознательный выбор в пользу «не стирать чужое».
-- **Сеанс.** До 80 последних значений намеренно остаются в памяти до закрытия
-  программы. Маскировка скрывает их только на экране; скриншот, экранный
-  диктор или дамп памяти её обходят. Кнопка **Очистить** освобождает значения,
-  но не гарантирует очистку всех копий в графическом стеке.
-- **Пиксельная маска.** Число колонок равно видимой длине значения (длина и так
-  показана в метаданных), а рисунок строится только из индексов ячеек и
-  времени; сами символы в него не попадают. Анимация «оседания» — визуальный
-  сигнал нового значения, а не индикатор стойкости; её можно отключить только
-  вместе с маскировкой (кнопка **показать**).
-- **Скрытые символы** — совместимость, а не защита. Сайты, терминалы и
-  менеджеры паролей могут удалить U+200B/C/D; реально вставленное количество
-  показывается, но получатель может его не сохранить.
-- **Оценка энтропии** предполагает независимые равномерные выборки. Она не
-  учитывает слабости конкретного сайта, повторное использование пароля,
-  утечки, фишинг и человеческие шаблоны. Это не гарантия стойкости.
-- **Локальный противник.** Администратор, вредоносное ПО, кейлоггер,
-  инжектор в процесс, отладчик или программа захвата экрана могут прочитать
-  секрет в обход всех мер GLYPH. Приложение не повышает права и не ставит
-  хуков.
-- **Нет подписи кода и автообновления.** Сверяйте SHA-256 релиза с указанным в
-  release notes. Обновления не загружаются и не устанавливаются автоматически.
-- **Сборка и доверие к инструментам.** Используются Rust 1.99 MSVC и
-  зафиксированный `Cargo.lock`; воспроизводимость байт-в-байт не гарантируется.
-  Проверка PE подтверждает формат, подсистему, статический CRT и манифест, но
-  не отсутствие закладок в компиляторе и зависимостях.
+## Limitations and residual risks
 
-## Сообщить об уязвимости
+- **Copies in memory.** `zeroize` covers GLYPH's primary buffers. The text also
+  exists in egui's layout cache, in the graphics stack and in the clipboard
+  heap, and may remain in the pagefile. This is not protection against memory
+  dumps, sleep mode or privileged malware.
+- **The clipboard timer is best effort.** After 30 seconds GLYPH tries to clear
+  the clipboard, retrying for up to 3 seconds. If the clipboard stays busy, the
+  application stops tracking it and shows a warning: the secret may remain until
+  the next copy from another application. Killing the process, a `panic` and a
+  power loss skip the clear (`panic = "abort"` bypasses `Drop`).
+- **Third-party clipboard managers.** The history/cloud opt-out markers are a
+  Windows recommendation; other programs may ignore them and keep their own
+  copy. GLYPH cannot delete foreign copies.
+- **Ownership heuristic.** If a clipboard manager changes the sequence number
+  without replacing the text, GLYPH treats the clipboard as foreign and leaves
+  the secret. This is a deliberate choice to never erase someone else's data.
+- **Session.** Up to 80 recent values intentionally stay in memory until the
+  program exits. Masking hides them only on screen; a screenshot, a screen
+  reader or a memory dump bypasses it. **Clear** releases the values but does
+  not guarantee wiping every copy in the graphics stack.
+- **Pixel mask.** The number of columns equals the visible length (length is
+  already shown in the metadata); the pattern is built only from cell indexes
+  and time, never from the characters themselves. The settle animation is a
+  visual signal of a new value, not a strength indicator; it can only be
+  disabled together with masking (the **show** button).
+- **Hidden characters** are a compatibility feature, not protection. Sites,
+  terminals and password managers may strip U+200B/C/D; the number actually
+  inserted is shown, but the recipient may not preserve it.
+- **Entropy estimate** assumes independent uniform draws. It does not account
+  for weaknesses of a particular site, password reuse, leaks, phishing or human
+  patterns. It is not a guarantee of strength.
+- **Local adversary.** An administrator, malware, a keylogger, a process
+  injector, a debugger or a screen-capture tool can read the secret around every
+  GLYPH measure. The application does not elevate privileges or install hooks.
+- **No code signing or auto-update.** Compare the release SHA-256 with the one in
+  the release notes. Updates are never downloaded or installed automatically.
+- **Build and toolchain trust.** Rust 1.99 MSVC and the pinned `Cargo.lock` are
+  used; byte-for-byte reproducibility is not guaranteed. The PE check confirms
+  the format, subsystem, static CRT and manifest, but not the absence of
+  backdoors in the compiler or dependencies.
 
-Напишите автору в [Telegram](https://t.me/rercon). Укажите версию GLYPH, шаги
-воспроизведения, ожидаемое и фактическое поведение. Не прикладывайте настоящие
-пароли, токены, ключи Fernet и содержимое буфера обмена — используйте
-синтетические значения. Пожалуйста, не публикуйте эксплуатируемую деталь до
-исправления.
+## Reporting a vulnerability
 
-Поддерживается последняя опубликованная версия линейки 0.1.x.
+Write to the author on [Telegram](https://t.me/rercon). Include the GLYPH
+version, reproduction steps and the expected/actual behaviour. Do not attach
+real passwords, tokens, Fernet keys or clipboard contents — use synthetic
+values. Please do not publish an exploitable detail before it is fixed.
+
+The latest published release of the 0.1.x line is supported.

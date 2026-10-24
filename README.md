@@ -8,7 +8,7 @@
   <strong>Passwords, PINs, tokens and Fernet keys.<br>Generated locally, kept in memory, never sent anywhere.</strong>
 </p>
 
-<p align="center"><strong>English</strong> · <a href="README.ru.md">Русский</a></p>
+<p align="center"><strong>English</strong> · <a href="README.ru.md">Russian</a></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-2f855a"></a>
@@ -110,7 +110,7 @@ Download `GLYPH.exe` from [Releases](https://github.com/RERCON0/GLYPH/releases),
 installer, no administrator prompt and no first-run network access.
 
 At startup GLYPH immediately creates a password. Switching the mode creates a
-result in that format; changing parameters requires **Создать** (Create) so the
+result in that format; changing parameters requires **Create** so the
 displayed result always matches the visible settings. Copying a stale result is
 blocked until you create a new one.
 
@@ -125,7 +125,7 @@ blocked until you create a new one.
 > the next launch. Russian is the default on a fresh profile.
 
 > [!TIP]
-> Use **Скрыть** (Hide) when someone can see the screen. It masks the current
+> Use **hide** when someone can see the screen. It masks the current
 > result and the session, but copying still returns the real value.
 
 ## Modes
@@ -148,12 +148,13 @@ it does not escape arbitrary shell commands.
 The session keeps the last 80 generated values **in memory only**, newest
 first. It disappears when GLYPH closes; nothing is written to disk.
 
-- **Копировать** on a row copies that exact value, including hidden characters.
-  It works even after the settings have changed.
-- **Очистить** clears the history but keeps the current result.
-- **Скрыть** replaces the current result with a fixed pixel mask and every
-  session row with a pixel-style placeholder; the copy action still uses the
-  original value. Creating a new value replays a short pixel animation.
+- **Copy** on a row copies that exact value, including hidden characters. It
+  works even after the settings have changed.
+- **Clear** clears the history but keeps the current result.
+- **hide** replaces the current result with a pixel mask (one column per
+  visible character) and every session row with a pixel-style placeholder;
+  **Copy** still uses the original value. Creating a new value replays a short
+  pixel animation.
 - Hover a truncated row to see its mode, visible length, entropy estimate and
   hidden-character count.
 - The list occupies the free height under the form and scrolls inside its own

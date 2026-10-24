@@ -38,7 +38,7 @@ certutil -hashfile GLYPH.exe SHA256
 ```
 
 Модель угрозы и остаточные риски:
-[SECURITY.md](https://github.com/RERCON0/GLYPH/blob/main/SECURITY.md).
+[SECURITY.ru.md](https://github.com/RERCON0/GLYPH/blob/main/SECURITY.ru.md).
 
 Исходники и инструкции по сборке — в
 [репозитории](https://github.com/RERCON0/GLYPH).
