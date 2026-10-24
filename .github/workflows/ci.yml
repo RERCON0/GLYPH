@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    # GLYPH is Windows-only: Win32 clipboard, PE resources and the MSVC CRT.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Test
+        run: cargo test --all-targets --all-features --locked
+      - name: Release build
+        run: cargo build --release --locked --bin glyph
+      - name: Verify Windows artifact
+        run: python scripts/check_artifact.py target/release/glyph.exe
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Known vulnerabilities in Cargo.lock
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

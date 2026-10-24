@@ -1,0 +1,8 @@
+/target/
+/dist/
+/GLYPH.exe
+*.pdb
+
+# Local agent/tooling state.
+.opencode/
+*.log
