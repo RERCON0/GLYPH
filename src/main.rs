@@ -24,6 +24,7 @@ fn main() -> eframe::Result {
         "GLYPH",
         eframe::NativeOptions {
             viewport,
+            centered: true,
             renderer: eframe::Renderer::Glow,
             ..Default::default()
         },
