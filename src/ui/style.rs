@@ -7,12 +7,15 @@ pub const CONTENT_WIDTH: f32 = 580.0;
 pub const CONTROL_HEIGHT: f32 = 32.0;
 pub const TITLE_HEIGHT: f32 = 34.0;
 pub const TITLE_BUTTON_WIDTH: f32 = 34.0;
-pub const THEME_BUTTON_WIDTH: f32 = 48.0;
+pub const LANG_BUTTON_WIDTH: f32 = 34.0;
+pub const THEME_BUTTON_WIDTH: f32 = 54.0;
 const MONO: &[u8] = include_bytes!("../../fonts/CascadiaMono-Light.ttf");
 
 pub fn accent(dark: bool) -> Color32 {
     if dark {
-        Color32::from_rgb(112, 214, 221)
+        // Muted ice-cyan: the SNATCH palette's green sits at a similar
+        // luminance, but pure cyan at #70D6DD read noticeably brighter.
+        Color32::from_rgb(95, 179, 186)
     } else {
         Color32::from_rgb(0, 104, 116)
     }
@@ -111,7 +114,7 @@ fn visuals(dark: bool) -> egui::Visuals {
             rgb(30, 30, 36),
             rgb(51, 51, 60),
             rgb(214, 214, 218),
-            rgb(143, 143, 153),
+            rgb(131, 131, 140),
         )
     } else {
         (
@@ -141,7 +144,9 @@ fn visuals(dark: bool) -> egui::Visuals {
     v.faint_bg_color = field;
     v.code_bg_color = field;
     v.hyperlink_color = accent;
-    v.override_text_color = Some(text);
+    // No override_text_color: plain labels and field values then use
+    // widgets.noninteractive.fg_stroke (text_dim), exactly like SNATCH.
+    // `text` stays reserved for hover/active and explicit emphasis.
     v.warn_fg_color = if dark {
         rgb(224, 179, 77)
     } else {
@@ -152,7 +157,7 @@ fn visuals(dark: bool) -> egui::Visuals {
     } else {
         rgb(177, 32, 45)
     };
-    v.selection.bg_fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 40);
+    v.selection.bg_fill = Color32::from_rgba_unmultiplied(accent.r(), accent.g(), accent.b(), 45);
     v.selection.stroke = Stroke::new(1.0, accent);
     for widget in [
         &mut v.widgets.noninteractive,
@@ -260,7 +265,7 @@ pub fn wordmark(ui: &mut egui::Ui, dark: bool) {
     let galley = ui.painter().layout_no_wrap(
         crate::WORDMARK.to_owned(),
         font,
-        ui.visuals().weak_text_color().gamma_multiply(0.65),
+        ui.visuals().text_color().gamma_multiply(0.65),
     );
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), galley.size().y + 2.0),
@@ -269,13 +274,16 @@ pub fn wordmark(ui: &mut egui::Ui, dark: bool) {
     ui.painter().galley(
         egui::pos2(rect.center().x - galley.size().x / 2.0, rect.top()),
         galley,
-        ui.visuals().weak_text_color(),
+        ui.visuals().text_color(),
     );
     ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
         ui.label(
-            RichText::new("пароли / токены / ключи")
-                .size(10.0)
-                .color(accent(dark)),
+            RichText::new(crate::tr!(
+                "passwords / tokens / keys",
+                "пароли / токены / ключи"
+            ))
+            .size(10.0)
+            .color(accent(dark)),
         );
     });
 }

@@ -1,6 +1,8 @@
 //! Timed, ownership-aware clipboard writes. Never erase a later copy.
 use std::time::{Duration, Instant};
 
+use crate::tr;
+
 pub const LIFETIME: Duration = Duration::from_secs(30);
 const RETRY_WINDOW: Duration = Duration::from_secs(3);
 
@@ -11,7 +13,10 @@ pub enum ClipboardError {
 
 impl std::fmt::Display for ClipboardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Буфер обмена занят или недоступен. Попробуйте ещё раз.")
+        f.write_str(tr!(
+            "The clipboard is busy or unavailable. Try again.",
+            "Буфер обмена занят или недоступен. Попробуйте ещё раз."
+        ))
     }
 }
 impl std::error::Error for ClipboardError {}
@@ -340,6 +345,25 @@ mod tests {
             backend: Fake::default(),
             lease: None,
         }
+    }
+
+    #[test]
+    fn clipboard_errors_follow_the_ui_language() {
+        use crate::i18n::{Language, with_language};
+        with_language(Language::En, || {
+            assert!(
+                ClipboardError::Unavailable
+                    .to_string()
+                    .starts_with("The clipboard")
+            );
+        });
+        with_language(Language::Ru, || {
+            assert!(
+                ClipboardError::Unavailable
+                    .to_string()
+                    .starts_with("Буфер обмена")
+            );
+        });
     }
 
     #[test]

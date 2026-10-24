@@ -37,6 +37,11 @@
   <sub>Session history: every generated value can be copied again, exactly as generated.</sub>
 </p>
 
+<p align="center">
+  <a href="docs/screenshot-masked.png"><img src="docs/screenshot-masked.png" alt="GLYPH masked mode with a pixel redaction strip" width="420"></a><br>
+  <sub>Masked mode: one pixel column per character; it re-settles on every new value.</sub>
+</p>
+
 GLYPH is a compact native generator for the credentials you create yourself:
 account passwords, numeric PINs, random hex tokens, URL-safe secrets and
 Python Fernet keys. It runs as a single portable executable, asks for no
@@ -50,7 +55,8 @@ unchanged when you copy it from the session.
 
 - **Local by construction.** Secrets are created with the operating system
   CSPRNG and stay in process memory. There is no account, sync, telemetry,
-  update check, config file, history file or log.
+  update check, history file or log. The only saved preference is the
+  interface language in `HKCU\Software\GLYPH`; it contains no secrets.
 - **Bias-free randomness.** Character indexes use rejection sampling, and
   shuffling is Fisher–Yates. If the OS random source fails at any stage,
   generation stops instead of falling back to a weaker PRNG.
@@ -85,6 +91,13 @@ unchanged when you copy it from the session.
   This is a character filter, **not** hashing and **not** general shell escaping.
 - **Session:** the last 80 values, newest first, with an individual copy button,
   masking, clearing and hover details (mode, length, entropy, hidden count).
+- **Pixel mask:** in masked mode the value is replaced by a pixel-redaction
+  strip, not by dots, with one pixel column per visible character (capped by the
+  field width). Every new value replays a short settle animation, so a
+  regeneration is visible even when the secret itself stays hidden. The pattern
+  is derived only from cell positions and time, never from the secret.
+- **English / Russian:** the EN/RU button in the title bar switches the whole
+  interface and remembers the choice across launches.
 - **Clipboard timer:** ownership-aware 30-second clear with a 3-second retry
   window, Windows clipboard-history/cloud opt-out markers, and a clear attempt
   on orderly exit.
@@ -107,8 +120,9 @@ blocked until you create a new one.
 | `Ctrl+Shift+C` | Copy the current value with the timed clipboard |
 
 > [!NOTE]
-> The interface is currently Russian-only. All controls are described in this
-> README and in [README.ru.md](README.ru.md).
+> The interface is available in English and Russian. Use the **EN / RU** button
+> in the title bar; the choice is saved in `HKCU\Software\GLYPH` and restored on
+> the next launch. Russian is the default on a fresh profile.
 
 > [!TIP]
 > Use **Скрыть** (Hide) when someone can see the screen. It masks the current
@@ -137,8 +151,9 @@ first. It disappears when GLYPH closes; nothing is written to disk.
 - **Копировать** on a row copies that exact value, including hidden characters.
   It works even after the settings have changed.
 - **Очистить** clears the history but keeps the current result.
-- **Скрыть** masks both the current result and every session row; the copy
-  action still uses the original value.
+- **Скрыть** replaces the current result with a fixed pixel mask and every
+  session row with a pixel-style placeholder; the copy action still uses the
+  original value. Creating a new value replays a short pixel animation.
 - Hover a truncated row to see its mode, visible length, entropy estimate and
   hidden-character count.
 - The list occupies the free height under the form and scrolls inside its own
@@ -158,10 +173,11 @@ that the clipboard was superseded and leaves the other content alone.
 - Clipboard writes set the Windows `CanIncludeInClipboardHistory` and
   `CanUploadToCloudClipboard` opt-out formats. Third-party clipboard managers
   may ignore them.
-- GLYPH makes no network requests, creates no files and writes no logs. The only
-  external action is opening the fixed `t.me/rercon` channel in the default
-  browser when you click the footer link; no secret or parameter is placed in
-  the URL.
+- GLYPH makes no network requests, creates no files with secrets and writes no
+  logs. The only persisted setting is the interface language in
+  `HKCU\Software\GLYPH`. The only external action is opening the fixed
+  `t.me/rercon` channel in the default browser when you click the footer link;
+  no secret or parameter is placed in the URL.
 
 Zeroization and the clipboard timer cover GLYPH's own primary buffers, not
 every copy: egui's text layout cache, the GPU/window stack and the clipboard
@@ -198,8 +214,9 @@ in `Cargo.toml`, `icons/icon.rc` and `icons/app.manifest` disagree.
 Screenshots are rendered from the app itself, using fixed demonstration values:
 
 ```powershell
-cargo run --locked --example snapshot --features preview -- docs/screenshot.png dark password 480 700
-cargo run --locked --example snapshot --features preview -- docs/screenshot-history.png dark password 544 780 history 6
+cargo run --locked --example snapshot --features preview -- docs/screenshot.png dark password 480 700 en
+cargo run --locked --example snapshot --features preview -- docs/screenshot-history.png dark password 544 780 history 6 en
+cargo run --locked --example snapshot --features preview -- docs/screenshot-masked.png dark password 480 700 masked en
 ```
 
 ## License

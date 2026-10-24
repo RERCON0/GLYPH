@@ -1,5 +1,4 @@
-use std::collections::VecDeque;
-use std::rc::Rc;
+use std::{borrow::Cow, collections::VecDeque, rc::Rc};
 
 use eframe::egui::{self, Align, FontId, RichText, Stroke};
 use zeroize::Zeroizing;
@@ -8,6 +7,7 @@ use crate::{
     TELEGRAM_HANDLE, VERSION,
     clipboard::{Clipboard, ClipboardError, PollResult},
     generator::{self, Generated, Mode, PasswordOptions},
+    i18n, tr, tr_format,
 };
 
 pub mod style;
@@ -37,12 +37,16 @@ pub struct GlyphApp {
     status: String,
     status_error: bool,
     dirty: bool,
+    generation: u64,
+    pixel_generation: u64,
+    pixel_started: f64,
     #[cfg(any(test, feature = "preview"))]
     preview_history_open: bool,
 }
 
 impl GlyphApp {
     pub fn new(ctx: &egui::Context) -> Self {
+        i18n::set_language(i18n::initial_language());
         style::setup_fonts(ctx);
         style::setup_theme(ctx, true);
         let mut app = Self {
@@ -63,6 +67,9 @@ impl GlyphApp {
             status: String::new(),
             status_error: false,
             dirty: false,
+            generation: 0,
+            pixel_generation: 0,
+            pixel_started: 0.0,
             #[cfg(any(test, feature = "preview"))]
             preview_history_open: false,
         };
@@ -91,7 +98,12 @@ impl GlyphApp {
                 self.history.push_front(Rc::clone(&result));
                 self.history.truncate(MAX_HISTORY);
                 self.result = Some(result);
-                self.status = "Создано локально. Ничего не сохраняется на диск.".into();
+                self.generation = self.generation.wrapping_add(1);
+                self.status = tr!(
+                    "Created locally. Nothing is saved to disk.",
+                    "Создано локально. Ничего не сохраняется на диск."
+                )
+                .into();
                 self.status_error = false;
             }
             Err(error) => {
@@ -105,7 +117,11 @@ impl GlyphApp {
 
     fn copy(&mut self, ctx: &egui::Context) {
         if self.dirty {
-            self.status = "Параметры изменены. Сначала нажмите «Создать».".into();
+            self.status = tr!(
+                "Parameters changed. Press “Create” first.",
+                "Параметры изменены. Сначала нажмите «Создать»."
+            )
+            .into();
             self.status_error = false;
             return;
         }
@@ -119,7 +135,11 @@ impl GlyphApp {
     fn finish_copy(&mut self, ctx: &egui::Context, copied: Result<(), ClipboardError>) {
         match copied {
             Ok(()) => {
-                self.status = "Скопировано · автоочистка через 30 секунд.".into();
+                self.status = tr!(
+                    "Copied · auto-clear in 30 seconds.",
+                    "Скопировано · автоочистка через 30 секунд."
+                )
+                .into();
                 self.status_error = false;
                 ctx.request_repaint_after(crate::clipboard::LIFETIME);
             }
@@ -140,7 +160,11 @@ impl GlyphApp {
             }
             HistoryAction::Clear => {
                 self.history.clear();
-                self.status = "История сеанса очищена. Текущий результат сохранён.".into();
+                self.status = tr!(
+                    "Session history cleared. The current result is kept.",
+                    "История сеанса очищена. Текущий результат сохранён."
+                )
+                .into();
                 self.status_error = false;
             }
         }
@@ -164,15 +188,23 @@ impl GlyphApp {
     pub fn tick(&mut self, ctx: &egui::Context) {
         match self.clipboard.poll() {
             PollResult::Cleared => {
-                self.status = "Буфер обмена очищен.".into();
+                self.status = tr!("Clipboard cleared.", "Буфер обмена очищен.").into();
                 self.status_error = false;
             }
             PollResult::Superseded => {
-                self.status = "В буфере уже другое содержимое — оно не изменено.".into();
+                self.status = tr!(
+                    "The clipboard already contains something else — it was not changed.",
+                    "В буфере уже другое содержимое — оно не изменено."
+                )
+                .into();
                 self.status_error = false;
             }
             PollResult::Failed => {
-                self.status = "Не удалось очистить занятый буфер. Очистите его вручную.".into();
+                self.status = tr!(
+                    "Couldn't clear the busy clipboard. Clear it manually.",
+                    "Не удалось очистить занятый буфер. Очистите его вручную."
+                )
+                .into();
                 self.status_error = true;
             }
             PollResult::Idle => {}
@@ -211,11 +243,19 @@ impl GlyphApp {
             )
             .show_separator_line(true)
             .show(ui, |ui| {
-                let color = if self.status_error { ui.visuals().error_fg_color } else { ui.visuals().weak_text_color() };
+                let color = if self.status_error {
+                    ui.visuals().error_fg_color
+                } else {
+                    ui.visuals().text_color()
+                };
                 ui.add(egui::Label::new(RichText::new(&self.status).size(10.5).color(color)).truncate())
                     .on_hover_text(&self.status);
                 ui.horizontal(|ui| {
-                    ui.weak(RichText::new(format!("glyph {VERSION} / rercon prod.")).size(10.0));
+                    ui.weak(RichText::new(format!("glyph {VERSION} / rercon prod.")).size(10.0))
+                        .on_hover_text(tr!(
+                            "Secrets are created and stay local. GLYPH makes no network requests; the browser opens only when you click the channel link.",
+                            "Секреты создаются и остаются локально. GLYPH сам не обращается к сети; браузер открывается только по вашему клику на ссылку канала."
+                        ));
                     ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                         let link = egui::Button::new(
                             RichText::new(TELEGRAM_HANDLE)
@@ -225,26 +265,29 @@ impl GlyphApp {
                         .frame(false);
                         if ui
                             .add(link)
-                            .on_hover_text("Открыть канал rercon в браузере")
+                            .on_hover_text(tr!(
+                                "Open the rercon channel in a browser",
+                                "Открыть канал rercon в браузере"
+                            ))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
                             if crate::system::open_telegram() {
-                                self.status = "Открываю t.me/rercon в браузере.".into();
+                                self.status = tr!(
+                                    "Opening t.me/rercon in the browser.",
+                                    "Открываю t.me/rercon в браузере."
+                                )
+                                .into();
                                 self.status_error = false;
                             } else {
-                                self.status =
-                                    "Не удалось открыть браузер. Адрес: t.me/rercon".into();
+                                self.status = tr!(
+                                    "Couldn't open the browser. Address: t.me/rercon",
+                                    "Не удалось открыть браузер. Адрес: t.me/rercon"
+                                )
+                                .into();
                                 self.status_error = true;
                             }
                         }
-                        ui.weak(RichText::new("·").size(10.0));
-                        ui.label(
-                            RichText::new("● локально")
-                                .size(10.0)
-                                .color(style::accent(self.dark)),
-                        )
-                        .on_hover_text("Секреты создаются и остаются локально. GLYPH сам не обращается к сети; браузер открывается только по вашему клику на ссылку канала.");
                     });
                 });
             });
@@ -306,8 +349,11 @@ impl GlyphApp {
                                     );
                                     if before != after {
                                         self.dirty = true;
-                                        self.status =
-                                            "Параметры изменены. Нажмите «Создать».".into();
+                                        self.status = tr!(
+                                            "Parameters changed. Press “Create”.",
+                                            "Параметры изменены. Нажмите «Создать»."
+                                        )
+                                        .into();
                                         self.status_error = false;
                                     }
                                     ui.add_space(4.0);
@@ -343,6 +389,7 @@ impl GlyphApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     let width = (ui.available_width()
+                        - style::LANG_BUTTON_WIDTH
                         - style::THEME_BUTTON_WIDTH
                         - 3.0 * style::TITLE_BUTTON_WIDTH)
                         .max(20.0);
@@ -364,20 +411,54 @@ impl GlyphApp {
                     }
                     if ui
                         .add_sized(
-                            [style::THEME_BUTTON_WIDTH, style::TITLE_HEIGHT - 2.0],
-                            style::plain_button(if self.dark { "день" } else { "ночь" })
-                                .frame(false),
+                            [style::LANG_BUTTON_WIDTH, style::TITLE_HEIGHT - 2.0],
+                            style::plain_button(tr!("RU", "EN")).frame(false),
                         )
-                        .on_hover_text("Сменить тему")
+                        .on_hover_text(tr!("Switch to Russian", "Переключить на английский"))
+                        .clicked()
+                    {
+                        let next = i18n::language().toggled();
+                        let saved = i18n::save_language(next);
+                        i18n::set_language(next);
+                        if saved {
+                            self.status =
+                                tr!("Interface language: English.", "Язык интерфейса: русский.")
+                                    .into();
+                            self.status_error = false;
+                        } else {
+                            self.status = tr!(
+                                "Language was not saved; it will reset on restart.",
+                                "Язык не сохранён; после перезапуска сбросится."
+                            )
+                            .into();
+                            self.status_error = true;
+                        }
+                        ui.ctx().request_repaint();
+                    }
+                    if ui
+                        .add_sized(
+                            [style::THEME_BUTTON_WIDTH, style::TITLE_HEIGHT - 2.0],
+                            style::plain_button(if self.dark {
+                                tr!("light", "день")
+                            } else {
+                                tr!("dark", "ночь")
+                            })
+                            .frame(false),
+                        )
+                        .on_hover_text(tr!("Switch theme", "Сменить тему"))
                         .clicked()
                     {
                         self.dark = !self.dark;
                         style::setup_theme(ui.ctx(), self.dark);
                     }
                     for (text, tooltip, action) in [
-                        ("─", "Свернуть", 0),
-                        ("□", "Развернуть / восстановить", 1),
-                        ("×", "Закрыть", 2),
+                        ("─", tr!("Minimize", "Свернуть"), 0),
+                        (
+                            "□",
+                            tr!("Maximize / restore", "Развернуть / восстановить"),
+                            1,
+                        ),
+                        ("×", tr!("Close", "Закрыть"), 2),
                     ] {
                         if ui
                             .add_sized(
@@ -445,18 +526,21 @@ impl GlyphApp {
             style::tag(
                 ui,
                 if self.dirty {
-                    "результат / прежние параметры"
+                    tr!(
+                        "result / previous settings",
+                        "результат / прежние параметры"
+                    )
                 } else {
-                    "результат"
+                    tr!("result", "результат")
                 },
             );
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 if ui
                     .add(
                         style::small_button(if self.masked {
-                            "показать"
+                            tr!("show", "показать")
                         } else {
-                            "скрыть"
+                            tr!("hide", "скрыть")
                         })
                         .frame(false),
                     )
@@ -473,37 +557,55 @@ impl GlyphApp {
         frame.show(ui, |ui| {
             ui.set_min_width((ui.available_width()).max(0.0));
             ui.set_min_height(34.0);
-            egui::ScrollArea::vertical()
-                .id_salt("secret")
-                .max_height(84.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    let text = if self.masked {
-                        "•••• •••• •••• ••••"
-                    } else {
-                        self.result.as_ref().map_or("Секрет не создан", |result| {
-                            result.secret.as_str()
-                        })
-                    };
-                    // The sole copy path is the timed clipboard, not egui's generic
-                    // Ctrl+C/context-menu path. No additional secret in widget state.
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(text)
-                                .font(FontId::new(15.0, egui::FontFamily::Name("field".into())))
-                                .color(ui.visuals().text_color()),
-                        )
-                        .wrap()
-                        .selectable(false),
-                    );
-                });
+            if self.masked && self.result.is_some() {
+                self.masked_pixels(ui);
+            } else {
+                egui::ScrollArea::vertical()
+                    .id_salt("secret")
+                    .max_height(84.0)
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        let text = self.result.as_ref().map_or(
+                            tr!("Secret not created", "Секрет не создан"),
+                            |result| result.secret.as_str(),
+                        );
+                        // The sole copy path is the timed clipboard, not egui's generic
+                        // Ctrl+C/context-menu path. No additional secret in widget state.
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(text)
+                                    .font(FontId::new(13.0, egui::FontFamily::Name("field".into())))
+                                    .color(ui.visuals().text_color()),
+                            )
+                            .wrap()
+                            .selectable(false),
+                        );
+                    });
+            }
         });
         if let Some(result) = &self.result {
             let meta = &result.metadata;
             ui.horizontal_wrapped(|ui| {
-                ui.weak(RichText::new(format!("{} · {}", meta.mode.label(), char_count(meta.visible_length))).size(11.0));
-                ui.label(RichText::new(format!("{} {:.0} бит", if meta.source_bytes.is_some() { "=" } else { "≥" }, meta.entropy_bits))
-                    .size(11.0).color(accent)).on_hover_text("Для пароля показана консервативная нижняя оценка энтропии. Скрытые символы в неё не включены.");
+                ui.weak(RichText::new(format!(
+                    "{} · {}",
+                    meta.mode.label(),
+                    char_count(meta.visible_length)
+                ))
+                .size(11.0));
+                let bits = tr!("bits", "бит");
+                ui.label(
+                    RichText::new(format!(
+                        "{} {:.0} {bits}",
+                        if meta.source_bytes.is_some() { "=" } else { "≥" },
+                        meta.entropy_bits
+                    ))
+                    .size(11.0)
+                    .color(accent),
+                )
+                .on_hover_text(tr!(
+                    "For a password this is a conservative lower-bound estimate. Hidden characters are not included.",
+                    "Для пароля показана консервативная нижняя оценка энтропии. Скрытые символы в неё не включены."
+                ));
                 ui.weak(RichText::new(generator::strength(meta.entropy_bits)).size(11.0));
             });
             let (rect, _) =
@@ -523,7 +625,8 @@ impl GlyphApp {
             ui.painter().rect_filled(fill, 0.0, color);
             if meta.hidden_count > 0 {
                 ui.label(
-                    RichText::new(format!(
+                    RichText::new(tr_format!(
+                        "+ {} hidden · sites may strip them on paste",
                         "+ {} скрытых · сайты могут удалить их при вставке",
                         meta.hidden_count
                     ))
@@ -538,9 +641,12 @@ impl GlyphApp {
             if ui
                 .add_sized(
                     [width, style::CONTROL_HEIGHT],
-                    style::button("↻ Создать", accent),
+                    style::button(tr!("↻ Create", "↻ Создать"), accent),
                 )
-                .on_hover_text("Создать новый секрет · Ctrl+Enter")
+                .on_hover_text(tr!(
+                    "Create a new secret · Ctrl+Enter",
+                    "Создать новый секрет · Ctrl+Enter"
+                ))
                 .clicked()
             {
                 self.generate();
@@ -548,10 +654,13 @@ impl GlyphApp {
             if ui
                 .add_enabled(
                     self.result.is_some() && !self.dirty,
-                    style::plain_button("Копировать")
+                    style::plain_button(tr!("Copy", "Копировать"))
                         .min_size(egui::vec2(width, style::CONTROL_HEIGHT)),
                 )
-                .on_hover_text("Ctrl+Shift+C · буфер очистится через 30 секунд или при выходе")
+                .on_hover_text(tr!(
+                    "Ctrl+Shift+C · the clipboard clears after 30 seconds or on exit",
+                    "Ctrl+Shift+C · буфер очистится через 30 секунд или при выходе"
+                ))
                 .clicked()
             {
                 self.copy(ui.ctx());
@@ -559,22 +668,104 @@ impl GlyphApp {
         });
     }
 
+    /// A fixed pixel-redaction pattern. It depends only on cell coordinates and
+    /// time, never on the secret, so the mask cannot leak length, entropy or
+    /// characters. The short settle animation makes a regeneration obvious
+    /// while the value stays hidden.
+    fn masked_pixels(&mut self, ui: &mut egui::Ui) {
+        const ROWS: usize = 3;
+        const CELL: f32 = 5.0;
+        const GAP: f32 = 1.0;
+        const DURATION: f64 = 0.45;
+
+        let now = ui.input(|i| i.time);
+        if self.pixel_generation != self.generation {
+            self.pixel_generation = self.generation;
+            self.pixel_started = now;
+        }
+        let progress = ((now - self.pixel_started) / DURATION).clamp(0.0, 1.0) as f32;
+        let animating = progress < 1.0;
+        let settle = progress * progress * (3.0 - 2.0 * progress);
+        let accent = style::accent(self.dark);
+        let base = ui.visuals().text_color();
+        let ppp = ui.ctx().pixels_per_point();
+        let snap = |value: f32| (value * ppp).round() / ppp;
+
+        let available = ui.available_width();
+        // One column per visible character, capped only by the field width.
+        // A 16-character password therefore paints half the strip of a
+        // 32-character one; the secret itself never influences the pattern.
+        let max_columns = (((available + GAP) / (CELL + GAP)).floor() as usize).max(1);
+        let columns = self
+            .result
+            .as_ref()
+            .map_or(1, |result| result.metadata.visible_length)
+            .clamp(1, max_columns);
+        let height = ROWS as f32 * CELL + (ROWS - 1) as f32 * GAP;
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(available, 19.0), egui::Sense::hover());
+        response.on_hover_text(tr!(
+            "Hidden value. Press “show” above the result to display it.",
+            "Скрытое значение. Нажмите «показать» над результатом, чтобы увидеть его."
+        ));
+        let origin = egui::pos2(snap(rect.left()), snap(rect.center().y - height / 2.0));
+        let frame = (now * 30.0) as u64;
+        let painter = ui.painter();
+        for row in 0..ROWS {
+            for col in 0..columns {
+                let index = (col * ROWS + row) as u64;
+                let static_level = (pixel_hash(index ^ 0xA5A5_5A5A_D3C1_B7E9) % 4) as u8;
+                let level = if animating {
+                    let flicker =
+                        (pixel_hash(index ^ frame.wrapping_mul(0x9E37_79B9_7F4A_7C15)) % 5) as u8;
+                    if (pixel_hash(index ^ frame) & 0x0f) == 0 {
+                        4 // a brief accent spark
+                    } else {
+                        (flicker as f32 * (1.0 - settle) + static_level as f32 * settle).round()
+                            as u8
+                    }
+                } else {
+                    static_level
+                };
+                let color = match level {
+                    0 => base.gamma_multiply(0.30),
+                    1 => base.gamma_multiply(0.46),
+                    2 => base.gamma_multiply(0.64),
+                    3 => base.gamma_multiply(0.84),
+                    _ => accent.gamma_multiply(0.90),
+                };
+                let x = origin.x + col as f32 * (CELL + GAP);
+                let y = origin.y + row as f32 * (CELL + GAP);
+                painter.rect_filled(
+                    egui::Rect::from_min_size(egui::pos2(snap(x), snap(y)), egui::vec2(CELL, CELL)),
+                    0.0,
+                    color,
+                );
+            }
+        }
+        if animating {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
+        }
+    }
+
     fn settings(&mut self, ui: &mut egui::Ui) {
-        style::tag(ui, "параметры");
+        style::tag(ui, tr!("settings", "параметры"));
         match self.mode {
             Mode::Password | Mode::Pin => {
                 let pin = self.mode == Mode::Pin;
                 ui.horizontal(|ui| {
-                    ui.label("Длина");
+                    ui.label(tr!("Length", "Длина"));
                     let length = if pin {
                         &mut self.pin_length
                     } else {
                         &mut self.options.length
                     };
                     ui.add(egui::DragValue::new(length).range(1..=256).speed(1.0))
-                        .on_hover_text(
-                            "От 1 до 256 видимых символов. Можно ввести число с клавиатуры.",
-                        );
+                        .on_hover_text(tr!(
+                            "1 to 256 visible characters. You can type a number.",
+                            "От 1 до 256 видимых символов. Можно ввести число с клавиатуры."
+                        ));
                     ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                         let presets: &[usize] = if pin { &[8, 6, 4] } else { &[64, 32, 16] };
                         for &preset in presets {
@@ -587,27 +778,39 @@ impl GlyphApp {
                 if !pin {
                     self.options.min_digits = self.options.min_digits.min(self.options.length);
                     ui.horizontal(|ui| {
-                        ui.label("Минимум цифр");
+                        ui.label(tr!("Min digits", "Минимум цифр"));
                         ui.add(
                             egui::DragValue::new(&mut self.options.min_digits)
                                 .range(0..=self.options.length),
                         );
                     });
-                    ui.checkbox(&mut self.options.special, "Спецсимволы");
+                    ui.checkbox(
+                        &mut self.options.special,
+                        tr!("Special characters", "Спецсимволы"),
+                    );
                 }
                 ui.checkbox(
                     &mut self.options.exclude_similar,
-                    "Без похожих: 0 O o I l 1",
+                    tr!(
+                        "Exclude look-alikes: 0 O o I l 1",
+                        "Без похожих: 0 O o I l 1"
+                    ),
                 );
                 if !pin {
                     self.advanced(ui);
                 } else {
-                    ui.weak(RichText::new("Только цифры. Без скрытых символов.").size(11.0));
+                    ui.weak(
+                        RichText::new(tr!(
+                            "Digits only. No hidden characters.",
+                            "Только цифры. Без скрытых символов."
+                        ))
+                        .size(11.0),
+                    );
                 }
             }
             Mode::Hex | Mode::Url => {
                 ui.horizontal(|ui| {
-                    ui.label("Случайных байт");
+                    ui.label(tr!("Random bytes", "Случайных байт"));
                     let bytes = if self.mode == Mode::Hex {
                         &mut self.hex_bytes
                     } else {
@@ -625,58 +828,102 @@ impl GlyphApp {
                 ui.weak(RichText::new(mode_description(self.mode)).size(11.5));
             }
             Mode::Fernet => {
-                ui.label("32 случайных байта → 44 символа base64url с «=».");
-                ui.weak(RichText::new("Для Python cryptography.fernet.Fernet. Храните ключ отдельно от зашифрованных данных.").size(11.5));
+                ui.label(tr!(
+                    "32 random bytes → 44 base64url characters with “=”.",
+                    "32 случайных байта → 44 символа base64url с «=»."
+                ));
+                ui.weak(
+                    RichText::new(tr!(
+                        "For Python cryptography.fernet.Fernet. Keep the key separate from the encrypted data.",
+                        "Для Python cryptography.fernet.Fernet. Храните ключ отдельно от зашифрованных данных."
+                    ))
+                    .size(11.5),
+                );
             }
         }
     }
 
     fn advanced(&mut self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Совместимость и скрытые символы").id_salt("advanced").show(ui, |ui| {
+        egui::CollapsingHeader::new(tr!(
+            "Compatibility & hidden characters",
+            "Совместимость и скрытые символы"
+        ))
+        .id_salt("advanced")
+        .show(ui, |ui| {
             let mut argon2 = self.options.argon2_safe;
-            if ui.checkbox(&mut argon2, "Argon2 / docker / bash / python")
-                .on_hover_text("Фильтр для прежней вложенной команды PasswordHasher().hash(...), а не хеширование и не универсальное экранирование shell. Исключает \" ' \\ $ ` ! и отключает скрытые символы.").changed() { self.set_argon2(argon2); }
+            if ui
+                .checkbox(&mut argon2, "Argon2 / docker / bash / python")
+                .on_hover_text(tr!(
+                    "Filter for the legacy nested PasswordHasher().hash(...) command — not hashing and not general shell escaping. Excludes \" ' \\ $ ` ! and disables hidden characters.",
+                    "Фильтр для прежней вложенной команды PasswordHasher().hash(...), а не хеширование и не универсальное экранирование shell. Исключает \" ' \\ $ ` ! и отключает скрытые символы."
+                ))
+                .changed()
+            {
+                self.set_argon2(argon2);
+            }
             ui.add_enabled_ui(!argon2, |ui| {
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.hidden_enabled, "Скрытые символы");
-                    ui.add_enabled(self.hidden_enabled, egui::DragValue::new(&mut self.hidden_amount).range(1..=256));
+                    ui.checkbox(
+                        &mut self.hidden_enabled,
+                        tr!("Hidden characters", "Скрытые символы"),
+                    );
+                    ui.add_enabled(
+                        self.hidden_enabled,
+                        egui::DragValue::new(&mut self.hidden_amount).range(1..=256),
+                    );
                 });
             });
-            ui.weak(RichText::new("Скрытые символы выключены по умолчанию: не все сайты их сохраняют. Число вставок ограничено доступными позициями.").size(11.0));
+            ui.weak(
+                RichText::new(tr!(
+                    "Hidden characters are off by default: not every site keeps them. The number of insertions is limited by available positions.",
+                    "Скрытые символы выключены по умолчанию: не все сайты их сохраняют. Число вставок ограничено доступными позициями."
+                ))
+                .size(11.0),
+            );
         });
         if self
             .result
             .as_ref()
             .is_some_and(|result| result.metadata.hidden_count > 0)
         {
-            egui::CollapsingHeader::new("Показать скрытые как \\u200B")
-                .id_salt("representation")
-                .show(ui, |ui| {
-                    if self.masked {
-                        ui.weak("Сначала нажмите «показать» над результатом.");
-                    } else {
-                        egui::ScrollArea::vertical()
-                            .id_salt("repr-scroll")
-                            .max_height(100.0)
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::Label::new(
-                                        RichText::new(self.representation.as_str())
-                                            .monospace()
-                                            .size(12.0),
-                                    )
-                                    .wrap()
-                                    .selectable(false),
-                                );
-                            });
-                    }
-                });
+            egui::CollapsingHeader::new(tr!(
+                "Show hidden as \\u200B",
+                "Показать скрытые как \\u200B"
+            ))
+            .id_salt("representation")
+            .show(ui, |ui| {
+                if self.masked {
+                    ui.weak(tr!(
+                        "Press “show” above the result first.",
+                        "Сначала нажмите «показать» над результатом."
+                    ));
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("repr-scroll")
+                        .max_height(100.0)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(self.representation.as_str())
+                                        .monospace()
+                                        .size(12.0),
+                                )
+                                .wrap()
+                                .selectable(false),
+                            );
+                        });
+                }
+            });
         }
     }
 
     fn activity(&self, ui: &mut egui::Ui, content_bottom: f32) -> Option<HistoryAction> {
-        let header = egui::CollapsingHeader::new(format!("Сеанс / {}", self.history.len()))
-            .id_salt("activity");
+        let header = egui::CollapsingHeader::new(tr_format!(
+            "Session / {}",
+            "Сеанс / {}",
+            self.history.len()
+        ))
+        .id_salt("activity");
         #[cfg(any(test, feature = "preview"))]
         let header = header.default_open(self.preview_history_open);
         header
@@ -692,23 +939,33 @@ impl GlyphApp {
             ui.add_sized(
                 [hint_width, 20.0],
                 egui::Label::new(
-                    RichText::new(format!("До {MAX_HISTORY} значений · только до закрытия"))
-                        .size(10.0)
-                        .weak(),
+                    RichText::new(tr_format!(
+                        "Up to {} values · memory only",
+                        "До {} значений · только до закрытия",
+                        MAX_HISTORY
+                    ))
+                    .size(10.0)
+                    .weak(),
                 )
                 .truncate()
                 .halign(Align::Min),
             );
             if ui
-                .add_enabled(!self.history.is_empty(), style::small_button("Очистить"))
-                .on_hover_text("Удалить историю из памяти. Текущий результат останется.")
+                .add_enabled(
+                    !self.history.is_empty(),
+                    style::small_button(tr!("Clear", "Очистить")),
+                )
+                .on_hover_text(tr!(
+                    "Delete the history from memory. The current result stays.",
+                    "Удалить историю из памяти. Текущий результат останется."
+                ))
                 .clicked()
             {
                 action = Some(HistoryAction::Clear);
             }
         });
         if self.history.is_empty() {
-            ui.weak(RichText::new("История пуста.").size(10.5));
+            ui.weak(RichText::new(tr!("History is empty.", "История пуста.")).size(10.5));
         }
         // One compact row remains reachable in a genuinely undersized window.
         // Otherwise the session consumes only the space left under the form.
@@ -731,13 +988,20 @@ impl GlyphApp {
                             .inner_margin(egui::Margin::symmetric(6, 0)).show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     let value_width = (ui.available_width() - 84.0 - ui.spacing().item_spacing.x).max(20.0);
-                                    let value = if self.masked { "•••• •••• •••• ••••" } else { entry.secret.as_str() };
+                                    // The row placeholder has one block per
+                                    // visible character, so a 4-digit PIN and
+                                    // a 64-character token look different.
+                                    let value: Cow<'_, str> = if self.masked {
+                                        Cow::Owned(mask_placeholder(meta.visible_length))
+                                    } else {
+                                        Cow::Borrowed(entry.secret.as_str())
+                                    };
                                     let mut text = egui::text::LayoutJob::default();
                                     text.append(&format!("{}  ", meta.mode.label()), 0.0, egui::TextFormat {
                                         font_id: FontId::new(10.0, egui::FontFamily::Name("field".into())),
                                         color: ui.visuals().weak_text_color(), ..Default::default()
                                     });
-                                    text.append(value, 0.0, egui::TextFormat {
+                                    text.append(value.as_ref(), 0.0, egui::TextFormat {
                                         font_id: FontId::new(12.0, egui::FontFamily::Name("field".into())),
                                         color: ui.visuals().text_color(), ..Default::default()
                                     });
@@ -748,16 +1012,27 @@ impl GlyphApp {
                                         .truncate().halign(Align::Min).selectable(false))
                                         .on_hover_ui(|ui| {
                                             let hidden = if meta.hidden_count > 0 {
-                                                format!(" · +{} скрытых", meta.hidden_count)
+                                                tr_format!(
+                                                    " · +{} hidden",
+                                                    " · +{} скрытых",
+                                                    meta.hidden_count
+                                                )
                                             } else {
                                                 String::new()
                                             };
-                                            ui.label(format!("{} · {} · {:.0} бит{}",
-                                                meta.mode.label(), char_count(meta.visible_length),
-                                                meta.entropy_bits, hidden));
+                                            let bits = tr!("bits", "бит");
+                                            ui.label(format!(
+                                                "{} · {} · {:.0} {bits}{hidden}",
+                                                meta.mode.label(),
+                                                char_count(meta.visible_length),
+                                                meta.entropy_bits
+                                            ));
                                         });
-                                    if ui.add_sized([84.0, 20.0], style::small_button("Копировать"))
-                                        .on_hover_text("Скопировать это значение целиком, включая скрытые символы. Автоочистка буфера — через 30 секунд.")
+                                    if ui.add_sized([84.0, 20.0], style::small_button(tr!("Copy", "Копировать")))
+                                        .on_hover_text(tr!(
+                                            "Copy this value in full, including hidden characters. Clipboard auto-clear after 30 seconds.",
+                                            "Скопировать это значение целиком, включая скрытые символы. Автоочистка буфера — через 30 секунд."
+                                        ))
                                         .clicked() && action.is_none() {
                                         action = Some(HistoryAction::Copy(Rc::clone(entry)));
                                     }
@@ -851,8 +1126,32 @@ impl GlyphApp {
         app.history.clear();
         app.history
             .push_front(Rc::clone(app.result.as_ref().unwrap()));
-        app.status = "Демонстрация интерфейса / не используйте этот секрет.".into();
+        app.status = tr!(
+            "Interface demo / do not use this secret.",
+            "Демонстрация интерфейса / не используйте этот секрет."
+        )
+        .into();
         app
+    }
+
+    /// Only the screenshot example calls this: it selects the language after
+    /// `preview` has created the demo state.
+    #[cfg(feature = "preview")]
+    pub fn set_preview_language(&mut self, language: crate::i18n::Language) {
+        i18n::set_language(language);
+        self.status = tr!(
+            "Interface demo / do not use this secret.",
+            "Демонстрация интерфейса / не используйте этот секрет."
+        )
+        .into();
+    }
+
+    /// Screenshots show the settled mask, not a mid-animation frame.
+    #[cfg(feature = "preview")]
+    pub fn set_preview_masked(&mut self, masked: bool) {
+        self.masked = masked;
+        self.pixel_generation = self.generation;
+        self.pixel_started = -10.0;
     }
 
     #[cfg(feature = "preview")]
@@ -887,19 +1186,50 @@ impl eframe::App for GlyphApp {
 
 fn mode_description(mode: Mode) -> &'static str {
     match mode {
-        Mode::Password => "Буквы, цифры, спецсимволы. Настраиваемая длина и совместимость.",
-        Mode::Pin => "Числовой PIN. Только цифры, без скрытых символов.",
-        Mode::Hex => {
+        Mode::Password => tr!(
+            "Letters, digits and special characters. Adjustable length and compatibility.",
+            "Буквы, цифры, спецсимволы. Настраиваемая длина и совместимость."
+        ),
+        Mode::Pin => tr!(
+            "Numeric PIN. Digits only, no hidden characters.",
+            "Числовой PIN. Только цифры, без скрытых символов."
+        ),
+        Mode::Hex => tr!(
+            "Equivalent of openssl rand -hex N. Each byte becomes two characters 0–9, a–f.",
             "Аналог openssl rand -hex N. Каждый байт записывается двумя символами 0–9, a–f."
-        }
-        Mode::Url => {
+        ),
+        Mode::Url => tr!(
+            "Equivalent of secrets.token_urlsafe(N). Base64url without “=” for links and API tokens.",
             "Аналог secrets.token_urlsafe(N). Base64url без «=» — для ссылок и API-токенов."
-        }
-        Mode::Fernet => "Ключ Python cryptography.fernet: 32 случайных байта в base64url с «=».",
+        ),
+        Mode::Fernet => tr!(
+            "Python cryptography.fernet key: 32 random bytes in base64url with “=”.",
+            "Ключ Python cryptography.fernet: 32 случайных байта в base64url с «=»."
+        ),
     }
 }
 
+fn mask_placeholder(length: usize) -> String {
+    const SHADES: [char; 3] = ['▓', '▒', '░'];
+    (0..length.clamp(1, 48))
+        .map(|index| SHADES[index % SHADES.len()])
+        .collect()
+}
+
+fn pixel_hash(mut value: u64) -> u64 {
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value
+}
+
 fn char_count(count: usize) -> String {
+    if !i18n::is_russian() {
+        let word = if count == 1 { "char" } else { "chars" };
+        return format!("{count} {word}");
+    }
     let word = if (11..=14).contains(&(count % 100)) {
         "символов"
     } else {
@@ -941,6 +1271,8 @@ fn record_scroll<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{Language, with_language};
+
     #[test]
     fn switching_modes_generates_the_actual_selected_format() {
         let mut app = GlyphApp::new(&egui::Context::default());
@@ -1204,6 +1536,76 @@ mod tests {
     }
 
     #[test]
+    fn english_character_counts() {
+        with_language(Language::En, || {
+            assert_eq!(char_count(1), "1 char");
+            assert_eq!(char_count(0), "0 chars");
+            assert_eq!(char_count(32), "32 chars");
+        });
+    }
+
+    #[test]
+    fn english_interface_has_no_russian_controls_or_local_badge() {
+        with_language(Language::En, || {
+            let ctx = egui::Context::default();
+            let mut app = GlyphApp::preview(&ctx, Mode::Password, true);
+            app.generate();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    style::WINDOW_SIZE.into(),
+                )),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| app.render(ui));
+            // Clear before asserting: epaint aborts the process if a failed
+            // test drops unapplied texture deltas.
+            output.textures_delta.clear();
+            let text: Vec<String> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                    _ => None,
+                })
+                .collect();
+            for expected in [
+                "Password",
+                "↻ Create",
+                "Copy",
+                "Length",
+                "Min digits",
+                "RU",
+                "light",
+            ] {
+                assert!(
+                    text.iter().any(|line| line == expected),
+                    "missing English control {expected:?}: {text:?}"
+                );
+            }
+            assert!(
+                text.iter().any(|line| line.contains("settings")),
+                "settings tag must be translated"
+            );
+            assert!(
+                text.iter().any(|line| line.contains("Session /")),
+                "session header must be translated"
+            );
+            for forbidden in ["Пароль", "Создать", "Копировать", "локально", "бит"]
+            {
+                assert!(
+                    !text.iter().any(|line| line.contains(forbidden)),
+                    "Russian text {forbidden:?} leaked into the English UI"
+                );
+            }
+            assert!(
+                !text.iter().any(|line| line.trim() == "● локально"),
+                "the removed local badge must not be painted"
+            );
+        });
+    }
+
+    #[test]
     fn shortcut_generates_once_and_hidden_logic_does_not_repeat_it() {
         let ctx = egui::Context::default();
         let mut app = GlyphApp::new(&ctx);
@@ -1257,6 +1659,91 @@ mod tests {
     }
 
     #[test]
+    fn masked_pixels_animate_then_settle_without_encoding_the_secret() {
+        let ctx = egui::Context::default();
+        let mut app = GlyphApp::preview(&ctx, Mode::Password, true);
+        app.masked = true;
+        let render = |app: &mut GlyphApp, time: f64| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        style::WINDOW_SIZE.into(),
+                    )),
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| app.render(ui),
+            );
+            output.textures_delta.clear();
+            output.shapes
+        };
+        let pixels = |shapes: &[egui::epaint::ClippedShape]| {
+            shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::epaint::Shape::Rect(rect)
+                        if (rect.rect.width() - 5.0).abs() < 0.01
+                            && (rect.rect.height() - 5.0).abs() < 0.01 =>
+                    {
+                        Some((rect.rect.min, rect.fill))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let first = render(&mut app, 0.0);
+        let first_pixels = pixels(&first);
+        assert!(
+            first_pixels.len() >= 4 * 8 * 3 && first_pixels.len() % 24 == 0,
+            "expected whole pixel groups, got {} cells",
+            first_pixels.len()
+        );
+        let mid = render(&mut app, 0.10);
+        let mid_pixels = pixels(&mid);
+        assert_eq!(mid_pixels.len(), first_pixels.len());
+        assert_ne!(first_pixels, mid_pixels, "the mask must animate");
+        let settled_a = render(&mut app, 1.0);
+        let settled_b = render(&mut app, 1.1);
+        assert_eq!(
+            pixels(&settled_a),
+            pixels(&settled_b),
+            "the mask must settle"
+        );
+        for shape in &settled_a {
+            if let egui::epaint::Shape::Text(text) = &shape.shape {
+                assert!(
+                    !text.galley.text().contains("m7#Qx2"),
+                    "the pixel mask must not reveal the secret"
+                );
+            }
+        }
+
+        // A shorter value paints a shorter strip: one column per character.
+        let mut metadata = app.result.as_ref().unwrap().metadata.clone();
+        metadata.visible_length = 16;
+        app.result = Some(Rc::new(Generated {
+            secret: Zeroizing::new("x".repeat(16)),
+            metadata,
+        }));
+        app.generation = app.generation.wrapping_add(1);
+        let shorter = render(&mut app, 1.2);
+        assert_eq!(
+            pixels(&shorter).len(),
+            16 * 3,
+            "one pixel column per visible character"
+        );
+    }
+
+    #[test]
+    fn history_placeholder_follows_visible_length() {
+        assert_eq!(mask_placeholder(4).chars().count(), 4);
+        assert_eq!(mask_placeholder(32).chars().count(), 32);
+        assert_eq!(mask_placeholder(0).chars().count(), 1);
+        assert_eq!(mask_placeholder(256).chars().count(), 48);
+    }
+
+    #[test]
     fn actual_controls_use_the_button_face_not_the_lowered_body_face() {
         let ctx = egui::Context::default();
         let mut app = GlyphApp::preview(&ctx, Mode::Password, true);
@@ -1278,6 +1765,7 @@ mod tests {
             "Копировать",
             "скрыть",
             "день",
+            "EN",
         ];
         let mut checked = 0;
         for shape in &output.shapes {
@@ -1463,25 +1951,32 @@ mod tests {
         }
     }
     #[test]
-    fn renders_every_mode_at_small_default_and_wide_sizes_in_both_themes() {
-        for size in [style::MIN_SIZE, style::WINDOW_SIZE, [960.0, 900.0]] {
-            for dark in [true, false] {
-                for mode in Mode::ALL {
-                    let ctx = egui::Context::default();
-                    let mut app = GlyphApp::preview(&ctx, mode, dark);
-                    let input = egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size.into())),
-                        ..Default::default()
-                    };
-                    let mut output = ctx.run_ui(input, |ui| app.render(ui));
-                    assert!(!output.shapes.is_empty());
-                    assert!(
-                        output.platform_output.commands.is_empty(),
-                        "render must not copy secrets or open URLs"
-                    );
-                    output.textures_delta.clear();
+    fn renders_every_mode_at_small_default_and_wide_sizes_in_both_themes_and_languages() {
+        for language in [Language::En, Language::Ru] {
+            with_language(language, || {
+                for size in [style::MIN_SIZE, style::WINDOW_SIZE, [960.0, 900.0]] {
+                    for dark in [true, false] {
+                        for mode in Mode::ALL {
+                            let ctx = egui::Context::default();
+                            let mut app = GlyphApp::preview(&ctx, mode, dark);
+                            let input = egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    size.into(),
+                                )),
+                                ..Default::default()
+                            };
+                            let mut output = ctx.run_ui(input, |ui| app.render(ui));
+                            assert!(!output.shapes.is_empty());
+                            assert!(
+                                output.platform_output.commands.is_empty(),
+                                "render must not copy secrets or open URLs"
+                            );
+                            output.textures_delta.clear();
+                        }
+                    }
                 }
-            }
+            });
         }
     }
 }

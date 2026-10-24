@@ -19,6 +19,8 @@ try {
     if ($LASTEXITCODE) { throw 'artifact check failed' }
     python scripts/check_artifact.py dist/GLYPH.exe
     if ($LASTEXITCODE) { throw 'packaged artifact check failed' }
+    $hash = (Get-FileHash dist/GLYPH.exe -Algorithm SHA256).Hash
+    "$hash  GLYPH.exe" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
     Get-FileHash dist/GLYPH.exe -Algorithm SHA256
 } finally {
     Pop-Location

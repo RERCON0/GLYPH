@@ -6,6 +6,8 @@ use base64::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::tr;
+
 pub const MAX_PASSWORD_LENGTH: usize = 256;
 pub const MAX_TOKEN_BYTES: usize = 1024;
 const LETTERS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -34,7 +36,7 @@ impl Mode {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            Self::Password => "Пароль",
+            Self::Password => tr!("Password", "Пароль"),
             Self::Pin => "PIN",
             Self::Hex => "HEX",
             Self::Url => "URL-safe",
@@ -78,13 +80,26 @@ pub enum GenerateError {
 impl fmt::Display for GenerateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::InvalidLength => "Длина пароля должна быть от 1 до 256 символов.",
-            Self::InvalidDigits => "Минимум цифр не может превышать длину пароля.",
-            Self::InvalidHiddenCount => "Допустимо от 0 до 256 скрытых символов.",
-            Self::InvalidTokenSize => "Размер токена должен быть от 1 до 1024 байт.",
-            Self::RandomUnavailable => {
+            Self::InvalidLength => tr!(
+                "Password length must be between 1 and 256 characters.",
+                "Длина пароля должна быть от 1 до 256 символов."
+            ),
+            Self::InvalidDigits => tr!(
+                "Minimum digits cannot exceed the password length.",
+                "Минимум цифр не может превышать длину пароля."
+            ),
+            Self::InvalidHiddenCount => tr!(
+                "Hidden characters must be between 0 and 256.",
+                "Допустимо от 0 до 256 скрытых символов."
+            ),
+            Self::InvalidTokenSize => tr!(
+                "Token size must be between 1 and 1024 bytes.",
+                "Размер токена должен быть от 1 до 1024 байт."
+            ),
+            Self::RandomUnavailable => tr!(
+                "The system random source is unavailable. No secret was created.",
                 "Системный источник случайности недоступен. Секрет не создан."
-            }
+            ),
         })
     }
 }
@@ -330,12 +345,12 @@ fn token_with(
 
 pub fn strength(bits: f64) -> &'static str {
     match bits {
-        x if x < 40.0 => "Очень слабый",
-        x if x < 60.0 => "Слабый",
-        x if x < 80.0 => "Средний",
-        x if x < 100.0 => "Хороший",
-        x if x < 120.0 => "Сильный",
-        _ => "Очень сильный",
+        x if x < 40.0 => tr!("Very weak", "Очень слабый"),
+        x if x < 60.0 => tr!("Weak", "Слабый"),
+        x if x < 80.0 => tr!("Medium", "Средний"),
+        x if x < 100.0 => tr!("Good", "Хороший"),
+        x if x < 120.0 => tr!("Strong", "Сильный"),
+        _ => tr!("Very strong", "Очень сильный"),
     }
 }
 
@@ -596,6 +611,28 @@ mod tests {
         );
         assert_eq!(pin(6, true).unwrap().secret.len(), 6);
         assert_eq!(token(Mode::Fernet, 32).unwrap().secret.len(), 44);
+    }
+
+    #[test]
+    fn labels_errors_and_strength_follow_the_ui_language() {
+        use crate::i18n::{Language, with_language};
+        with_language(Language::En, || {
+            assert_eq!(Mode::Password.label(), "Password");
+            assert_eq!(Mode::Pin.label(), "PIN");
+            assert_eq!(
+                GenerateError::InvalidLength.to_string(),
+                "Password length must be between 1 and 256 characters."
+            );
+            assert_eq!(strength(200.0), "Very strong");
+        });
+        with_language(Language::Ru, || {
+            assert_eq!(Mode::Password.label(), "Пароль");
+            assert_eq!(
+                GenerateError::InvalidLength.to_string(),
+                "Длина пароля должна быть от 1 до 256 символов."
+            );
+            assert_eq!(strength(200.0), "Очень сильный");
+        });
     }
 
     #[test]

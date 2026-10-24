@@ -1,6 +1,7 @@
 //! Generation is independent of the UI. Secrets never implement Debug or Serialize.
 pub mod clipboard;
 pub mod generator;
+pub mod i18n;
 pub mod system;
 pub mod ui;
 

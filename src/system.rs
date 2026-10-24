@@ -4,6 +4,48 @@
 
 use crate::TELEGRAM_URL;
 
+/// Windows 11 rounds the corners of top-level windows by default, including
+/// undecorated ones. The SNATCH/RAZE family is square, so ask DWM not to
+/// round this window. Windows 10 ignores the attribute.
+#[cfg(windows)]
+pub fn square_window_corners(cc: &eframe::CreationContext<'_>) {
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DwmSetWindowAttribute,
+    };
+    let Ok(handle) = cc.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(window) = handle.as_raw() else {
+        return;
+    };
+    // DWMWCP_DONOTROUND
+    let preference: u32 = 1;
+    // Windows 11 otherwise paints a one-pixel system-coloured border around
+    // the window, which reads as a light line on a near-black theme.
+    // DWMWA_COLOR_NONE removes it; Windows 10 ignores the attribute.
+    let no_border: u32 = DWMWA_COLOR_NONE;
+    // SAFETY: the HWND comes from eframe's live window; both DWORDs outlive
+    // the calls and each attribute expects exactly a DWORD.
+    unsafe {
+        DwmSetWindowAttribute(
+            window.hwnd.get() as *mut core::ffi::c_void,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            (&preference as *const u32).cast::<core::ffi::c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        DwmSetWindowAttribute(
+            window.hwnd.get() as *mut core::ffi::c_void,
+            DWMWA_BORDER_COLOR as u32,
+            (&no_border as *const u32).cast::<core::ffi::c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+pub fn square_window_corners(_: &eframe::CreationContext<'_>) {}
+
 /// Opens the fixed channel URL in the default browser.
 /// Returns `false` when the shell rejected the request; the UI then shows the
 /// address instead of pretending that a browser opened.

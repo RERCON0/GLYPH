@@ -80,6 +80,15 @@ fn main() -> eframe::Result {
     let show_history = args.get(5).is_some_and(|arg| arg == "history");
     let seed_history = show_history || args.get(5).is_some_and(|arg| arg == "history-closed");
     let history_count = args.get(6).and_then(|arg| arg.parse().ok()).unwrap_or(6);
+    let masked = args.iter().any(|arg| arg == "masked");
+    let language = args
+        .iter()
+        .find_map(|arg| match arg.as_str() {
+            "en" => Some(glyph::i18n::Language::En),
+            "ru" => Some(glyph::i18n::Language::Ru),
+            _ => None,
+        })
+        .unwrap_or(glyph::i18n::Language::Ru);
     eframe::run_native(
         "GLYPH preview",
         eframe::NativeOptions {
@@ -90,7 +99,12 @@ fn main() -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
+            glyph::system::square_window_corners(cc);
             let mut app = GlyphApp::preview(&cc.egui_ctx, mode, dark);
+            app.set_preview_language(language);
+            if masked {
+                app.set_preview_masked(true);
+            }
             if seed_history {
                 app.prepare_history_preview(history_count, show_history);
             }

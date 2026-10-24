@@ -1,17 +1,47 @@
-"""Rebuild GLYPH's original geometric G mark. Requires Pillow, build only."""
+"""Export GLYPH's selected pixel artwork to PNG/ICO. Requires Pillow, build only."""
 from pathlib import Path
+import io
+import struct
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
-root = Path(__file__).resolve().parents[1]
-scale = 4
-image = Image.new("RGBA", (256 * scale, 256 * scale), (11, 11, 14, 255))
-draw = ImageDraw.Draw(image)
-accent = (112, 214, 221, 255)
-# An open, angular G: a glyph rather than another padlock icon.
-points = [(180, 70), (80, 70), (60, 90), (60, 176), (80, 196), (186, 196), (186, 132), (130, 132)]
-draw.line([(x * scale, y * scale) for x, y in points], fill=accent, width=14 * scale)
-draw.rectangle((190 * scale, 60 * scale, 204 * scale, 74 * scale), fill=accent)
-image = image.resize((256, 256), Image.Resampling.LANCZOS)
-image.save(root / "icons" / "icon.png")
-image.save(root / "icons" / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "icons" / "source" / "glyph-pixel.png"
+SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+
+
+def main() -> None:
+    with Image.open(SOURCE) as source:
+        image = source.convert("RGBA")
+    if image.width != image.height:
+        raise ValueError("The selected icon source must be square")
+    # Preserve the selected artwork, colors, dark background and original margins.
+    frames = [
+        image.resize((size, size), Image.Resampling.LANCZOS)
+        for size in SIZES
+    ]
+    frames[-1].save(ROOT / "icons" / "icon.png", optimize=True)
+    payloads = []
+    for frame in frames:
+        output = io.BytesIO()
+        frame.save(output, format="PNG", optimize=True)
+        payloads.append(output.getvalue())
+    offset = 6 + 16 * len(frames)
+    entries = []
+    for size, payload in zip(SIZES, payloads):
+        dimension = 0 if size == 256 else size
+        entries.append(
+            struct.pack("<BBBBHHII", dimension, dimension, 0, 0, 1, 32,
+                        len(payload), offset)
+        )
+        offset += len(payload)
+    (ROOT / "icons" / "icon.ico").write_bytes(
+        struct.pack("<HHH", 0, 1, len(frames))
+        + b"".join(entries)
+        + b"".join(payloads)
+    )
+    print("GLYPH icon.png / icon.ico: " + ", ".join(map(str, SIZES)))
+
+
+if __name__ == "__main__":
+    main()
