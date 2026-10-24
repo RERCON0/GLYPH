@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "glyph"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64",
  "eframe",
