@@ -1,5 +1,7 @@
 # GLYPH 0.1.2
 
+- Restore the user's window size and maximized state after restarting. Generated values, history and transient widget state are never persisted.
+
 - Center the application window on startup.
 - Add a portable ZIP containing GLYPH.exe, documentation and application/font licenses.
 - Synchronize the executable, Windows manifest and Cargo.toml versions.

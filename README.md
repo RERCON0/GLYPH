@@ -147,7 +147,8 @@ it does not escape arbitrary shell commands.
 ## Session and clipboard
 
 The session keeps the last 80 generated values **in memory only**, newest
-first. It disappears when GLYPH closes; nothing is written to disk.
+first. It disappears when GLYPH closes; generated values are never written to disk.
+Window geometry is saved separately so the next launch restores your chosen size.
 
 - **Copy** on a row copies that exact value, including hidden characters. It
   works even after the settings have changed.
