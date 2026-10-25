@@ -1176,6 +1176,11 @@ impl GlyphApp {
 }
 
 impl eframe::App for GlyphApp {
+    fn persist_egui_memory(&self) -> bool {
+        // Never serialize generated secrets, history, or widget state.
+        false
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.tick(ctx);
     }
